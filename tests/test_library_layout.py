@@ -14,6 +14,7 @@ import unittest
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "scripts"))
 
 from downloads import common, library_layout
+import grade_bundle
 import library_query
 
 
@@ -225,6 +226,41 @@ class QueryCoverageTests(unittest.TestCase):
         self.assertFalse(library_query._volume_covers("上册", "下册"))
         self.assertTrue(library_query._volume_covers("上下册", "下册"))
         self.assertTrue(library_query._volume_covers("", "下册"))
+
+
+class GradeBundleTests(unittest.TestCase):
+    def test_bundle_keeps_edition_match_and_desk_topics(self):
+        series = [
+            _series("小学/数学/人教版/三年级/下册/同步课/例", "数学", "人教版", "三年级", "下册", "同步课"),
+            _series("小学/数学/人教版/三年级/上册/同步课/例", "数学", "人教版", "三年级", "上册", "同步课"),
+            _series("小学/数学/人教版/三至六年级/全册/试卷/范围", "数学", "人教版", "三至六年级", "", "试卷"),
+            _series("小学/数学/通用/思维专题/巧求面积", "数学", "通用", "", "", "思维专题"),
+            _series("小学/数学/通用/幼小衔接/衔接", "数学", "通用", "", "", "幼小衔接"),
+            _series("小学/英语/通用/自然拼读/拼读", "英语", "通用", "", "", "自然拼读"),
+        ]
+        chosen = grade_bundle.select_records(series, "数学", "人教版", "三年级", "下册")
+        paths = [record["path"] for record, _reason in chosen]
+        self.assertEqual(paths, [
+            "小学/数学/人教版/三年级/下册/同步课/例",
+            "小学/数学/人教版/三至六年级/全册/试卷/范围",
+            "小学/数学/通用/思维专题/巧求面积",
+        ])
+        reasons = {record["path"]: reason for record, reason in chosen}
+        self.assertEqual(reasons["小学/数学/通用/思维专题/巧求面积"], "desk")
+        self.assertEqual(reasons["小学/数学/人教版/三年级/下册/同步课/例"], "edition")
+
+
+def _series(path, subject, edition, grade, volume, role):
+    return {
+        "path": path,
+        "subject": subject,
+        "edition": edition,
+        "grade": grade,
+        "volume": volume,
+        "role": role,
+        "files": 1,
+        "bytes": 10,
+    }
 
 
 if __name__ == "__main__":
