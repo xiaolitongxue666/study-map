@@ -1,6 +1,6 @@
 ---
 name: ai-teacher-ops
-description: Maintain the ai-teacher learning-resource index repo — add or verify links, register a Quark share collection with measured file counts, run the link/Quark probes, query downloads/library for a lesson, and commit. Use when adding a resource to data/resources.json, editing docs/02 03 03b 07 13, running scripts/check_links.py, scripts/library_query.py, or scripts/download_video.py, or when a link needs re-verification.
+description: Maintain the ai-teacher learning-resource index repo — add or verify links, register a Quark share collection with measured file counts, run the link/Quark probes, query downloads/library for a lesson, extract PDF chapter outlines, and commit. Use when adding a resource to data/resources.json, editing docs/02 03 03b 07 13, running scripts/check_links.py, scripts/library_query.py, scripts/extract_outlines.py, or scripts/download_video.py, or when a link needs re-verification.
 disable-model-invocation: true
 ---
 
@@ -188,6 +188,31 @@ python scripts/library_query.py --subject 英语 --edition 人教版 --grade 三
 
 `library_catalog.json` 里的文件数和字节数只能由 `catalog_library.py` 重扫磁盘写回。手改会和磁盘分叉。
 
+### 工作流 F：抽 PDF 目录
+
+只留层级、标题、页码。正文和整页 Markdown 不留。索引在 `downloads/_index/pdf_outlines.json`，跟资料一起，不进 git。
+
+```bash
+PYTHONIOENCODING=utf-8 /e/Code/my_code/Agents/mini-ocr/.venv/Scripts/python.exe scripts/extract_outlines.py --core
+```
+
+系统 Python 3.10 没有 PyMuPDF。必须用 mini-ocr 的 Python 3.12。`--core` 是统编语文、人教数学、人教英语的同步练习和专项。`--all` 才扫全库。
+
+判定顺序：
+
+1. 真书签。丢掉 `转曲_页面_001`、`1_页面_01`、纯数字。整组不少于 8 条且标题全是「书名_页码」时，整组丢掉，改走下面两步。
+2. 前 12 页有文字层（去掉空白后不少于 80 字）时，只解析含「目录」的页。
+3. 没有文字层时，把这 12 页做成 `toc.pdf`，交给 mini-ocr。工作目录是 `downloads/_index/ocr-work`。模型目录仍用 mini-ocr 的 `config.yaml`。`batch.resume` 和 `skip_existing` 要关掉，否则删掉 Markdown 后同一本短 PDF 会被跳过。识别稿和短 PDF 用完即删。
+4. 前 12 页没有目录就记 `source: none`。不要继续 OCR 后面的练习页。
+
+已经写过的路径会跳过，包括 `none`。中断后重跑同一条命令。`--retry-none` 只重试 `none`。逐页书签若已写入，要先从索引删掉这些路径，再跑 `--core`。
+
+2026-11-24 00:40 写满 397 本。当天早晨删掉 17 本逐页书签，索引剩 380。这 17 本还没重抽，其中有三年级语文《练习帮》。
+
+看进度数 `files` 数组长度，不要看外壳有没有退出。Cursor 的 shell 可能先报结束，python 子进程还在写索引。Windows 上 `os.kill(pid, 0)` 会抛 `WinError 87`，查进程用 `OpenProcess`。日志重定向后中文可能是 GBK 乱码，命令前加 `PYTHONIOENCODING=utf-8`。不要开第二个抽取进程：每写完一本都会整文件重写 JSON，两个进程会互相覆盖。不要 `taskkill //T` 清理，会误伤别的下载。半小时汇报用 `python` 的 `time.sleep`，不要单条 `sleep 1800`。
+
+课桌只在 API 启动时读这份文件。索引变了要重启 `lesson-desk-api`，不必重建镜像。教辅单元不写入 cn-math-taxonomy。
+
 ## 不要做什么
 
 | 禁止 | 原因 |
@@ -211,6 +236,10 @@ python scripts/library_query.py --subject 英语 --edition 人教版 --grade 三
 | 用 `REPORT.md` 的条目数判断阶段完成 | 同样是历史累积，同一 item 重复出现；以 `progress.<stage>.json` 为准 |
 | 手改 `data/library_catalog.json` 的文件数或字节数 | 目录只反映磁盘扫描；改数字不会改文件位置 |
 | 把范老师几何课或课标 PDF 当成某一册的同步课 | 前者在 `数学/通用/思维专题/`，后者在 `课标/` |
+| 同时开两个 `extract_outlines.py` | 每本书都整文件重写 `pdf_outlines.json`，后写的会盖掉先写的 |
+| 把「书名_1」整组书签当成目录 | 这是逐页标签。不少于 8 条且标题都以 `_数字` 结尾就丢掉 |
+| 把 mini-ocr 的识别稿留在 mini-ocr 仓库 | 工作目录只许 `downloads/_index/ocr-work`，Markdown 用完即删 |
+| 对前 12 页没有「目录」的书继续 OCR 正文 | 记 `source: none`。`--retry-none` 才重试 |
 
 ## 环境约定
 
